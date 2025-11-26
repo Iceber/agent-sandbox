@@ -209,7 +209,6 @@ func (r *SandboxReconciler) computeReadyCondition(sandbox *sandboxv1alpha1.Sandb
 	if podReady && svcReady {
 		readyCondition.Status = metav1.ConditionTrue
 		readyCondition.Reason = "DependenciesReady"
-		return readyCondition
 	}
 
 	return readyCondition
@@ -327,7 +326,7 @@ func (r *SandboxReconciler) reconcilePod(ctx context.Context, sandbox *sandboxv1
 			log.Error(err, "Failed to get Pod")
 			return nil, fmt.Errorf("Pod Get Failed: %w", err)
 		}
-		if k8serrors.IsNotFound(err) && podNameAnnotationExists {
+		if podNameAnnotationExists {
 			log.Error(err, "Pod not found")
 			return nil, fmt.Errorf("Pod in Annotation Get Failed: %w", err)
 		}
@@ -439,25 +438,25 @@ func (r *SandboxReconciler) reconcilePVCs(ctx context.Context, sandbox *sandboxv
 		pvcName := pvcTemplate.Name + "-" + sandbox.Name
 		err := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: sandbox.Namespace}, pvc)
 		if err != nil {
-			if k8serrors.IsNotFound(err) {
-				log.Info("Creating a new PVC", "PVC.Namespace", sandbox.Namespace, "PVC.Name", pvcName)
-				pvc = &corev1.PersistentVolumeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      pvcName,
-						Namespace: sandbox.Namespace,
-					},
-					Spec: pvcTemplate.Spec,
-				}
-				if err := ctrl.SetControllerReference(sandbox, pvc, r.Scheme); err != nil {
-					return fmt.Errorf("SetControllerReference for PVC failed: %w", err)
-				}
-				if err := r.Create(ctx, pvc, client.FieldOwner(sandboxControllerFieldOwner)); err != nil {
-					log.Error(err, "Failed to create PVC", "PVC.Namespace", sandbox.Namespace, "PVC.Name", pvcName)
-					return err
-				}
-			} else {
+			if !k8serrors.IsNotFound(err) {
 				log.Error(err, "Failed to get PVC")
 				return fmt.Errorf("PVC Get Failed: %w", err)
+			}
+
+			log.Info("Creating a new PVC", "PVC.Namespace", sandbox.Namespace, "PVC.Name", pvcName)
+			pvc = &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pvcName,
+					Namespace: sandbox.Namespace,
+				},
+				Spec: pvcTemplate.Spec,
+			}
+			if err := ctrl.SetControllerReference(sandbox, pvc, r.Scheme); err != nil {
+				return fmt.Errorf("SetControllerReference for PVC failed: %w", err)
+			}
+			if err := r.Create(ctx, pvc, client.FieldOwner(sandboxControllerFieldOwner)); err != nil {
+				log.Error(err, "Failed to create PVC", "PVC.Namespace", sandbox.Namespace, "PVC.Name", pvcName)
+				return err
 			}
 		}
 	}
